@@ -1,0 +1,671 @@
+import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ShoppingCart, Clock, CheckCircle, AlertTriangle, Loader2, Home, ListChecks } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// --- Data ---
+interface FoodItem {
+    name: string;
+    price: number;
+    stock: number;
+    image: string; // Add image URL
+}
+
+interface Order {
+    orderNumber: string;
+    items: { item: string; quantity: number }[];
+    total: number;
+    orderTime: string;
+}
+
+const initialFoodItems: FoodItem[] = [
+    {
+        name: 'Fishball',
+        price: 10,
+        stock: 10,
+        image: 'https://cdn.i-scmp.com/sites/default/files/d8/images/methode/2020/09/04/ab54e002-eded-11ea-8288-5c49f42eee5c_image_hires_143022.jpg',
+    },
+    {
+        name: 'Siu Mai',
+        price: 8,
+        stock: 15,
+        image: 'https://www.simpleindeed.com/wp-content/uploads/2017/03/Homemade-Siu-Mai-6-1.jpg',
+    },
+    {
+        name: 'Nugget',
+        price: 12,
+        stock: 5,
+        image: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR3B2qUHCEKWg1UWSkc93nASDt-zGp3Z-SHhQ&s',
+    },
+];
+
+// --- Helper Functions ---
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-HK', {
+        style: 'currency',
+        currency: 'HKD',
+    }).format(amount);
+};
+
+// --- Components ---
+
+// --- Order Food Page ---
+const OrderFoodPage = ({
+    foodItems,
+    cart,
+    setCart,
+    setPage,
+    setFoodItems
+}: {
+    foodItems: FoodItem[];
+    cart: { item: string; quantity: number }[];
+    setCart: (cart: { item: string; quantity: number }[]) => void;
+    setPage: (page: string) => void;
+    setFoodItems: (foodItems: FoodItem[]) => void;
+}) => {
+    const [orderQuantities, setOrderQuantities] = useState<{ [key: string]: number }>({});
+    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+    // Initialize order quantities
+    useEffect(() => {
+        const initialQuantities: { [key: string]: number } = {};
+        foodItems.forEach(item => {
+            initialQuantities[item.name] = 0;
+        });
+        setOrderQuantities(initialQuantities);
+    }, [foodItems]);
+
+    const handleQuantityChange = (itemName: string, quantity: number) => {
+        setOrderQuantities(prevQuantities => ({
+            ...prevQuantities,
+            [itemName]: quantity,
+        }));
+        // Clear error when quantity changes
+        setErrors(prevErrors => {
+            const newErrors = { ...prevErrors };
+            delete newErrors[itemName];
+            return newErrors;
+        });
+    };
+
+    const handleAddToCart = (item: FoodItem) => {
+        const quantity = orderQuantities[item.name];
+        if (!quantity || quantity <= 0) {
+            setErrors(prevErrors => ({
+                ...prevErrors,
+                [item.name]: 'Please select a valid quantity (1-2).',
+            }));
+            return;
+        }
+
+        if (quantity > 2) {
+            setErrors(prevErrors => ({
+                ...prevErrors,
+                [item.name]: 'Maximum quantity is 2.',
+            }));
+            return;
+        }
+
+        if (quantity > item.stock) {
+            setErrors(prevErrors => ({
+                ...prevErrors,
+                [item.name]: 'Insufficient stock.',
+            }));
+            return;
+        }
+
+        // Check if the item is already in the cart
+        const existingItemIndex = cart.findIndex(cartItem => cartItem.item === item.name);
+
+        if (existingItemIndex > -1) {
+            // Update quantity if item exists
+            const updatedCart = [...cart];
+            updatedCart[existingItemIndex].quantity += quantity;
+            if (updatedCart[existingItemIndex].quantity > 2) {
+                setErrors(prevErrors => ({
+                    ...prevErrors,
+                    [item.name]: 'Maximum quantity is 2.',
+                }));
+                return;
+            }
+            setCart(updatedCart);
+        } else {
+            // Add new item to cart
+            setCart([...cart, { item: item.name, quantity }]);
+        }
+
+        // Update stock
+        setFoodItems(prevItems =>
+            prevItems.map(foodItem =>
+                foodItem.name === item.name
+                    ? { ...foodItem, stock: foodItem.stock - quantity }
+                    : foodItem
+            )
+        );
+
+        // Reset quantity
+        setOrderQuantities(prevQuantities => ({
+            ...prevQuantities,
+            [item.name]: 0,
+        }));
+    };
+
+    return (
+        <div className="container mx-auto p-4">
+            <h1 className="text-2xl font-bold mb-4 text-center">Order Food</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {foodItems.map((item) => (
+                    <Card key={item.name} className="group">
+                        <CardHeader>
+                            <h2 className="text-lg font-semibold">{item.name}</h2>
+                            <p className="text-gray-500">{formatCurrency(item.price)}</p>
+                            <Badge
+                                variant={item.stock > 0 ? 'default' : 'destructive'}
+                                className="mt-2"
+                            >
+                                {item.stock > 0 ? `Stock: ${item.stock}` : 'Out of Stock'}
+                            </Badge>
+                        </CardHeader>
+                        <CardContent>
+                            {/* Display Image */}
+                            <div className="mb-4">
+                                <img
+                                    src={item.image}
+                                    alt={item.name}
+                                    className="w-full h-32 object-cover rounded-md" // Adjust height as needed
+                                />
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    max="2"
+                                    value={orderQuantities[item.name] || 0}
+                                    onChange={(e) =>
+                                        handleQuantityChange(item.name, parseInt(e.target.value, 10))
+                                    }
+                                    className="w-20"
+                                    disabled={item.stock === 0}
+                                />
+                                <Button
+                                    onClick={() => handleAddToCart(item)}
+                                    disabled={item.stock === 0}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white flex-1"
+                                >
+                                    Add to Cart
+                                </Button>
+                            </div>
+                            {errors[item.name] && (
+                                <p className="text-red-500 mt-2 text-sm">{errors[item.name]}</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+            <div className="mt-6 flex justify-center">
+                <Button
+                    onClick={() => setPage('cart')}
+                    className="bg-green-500 hover:bg-green-600 text-white"
+                    disabled={cart.length === 0}
+                >
+                    <ShoppingCart className="mr-2" />
+                    Go to Cart ({cart.length})
+                </Button>
+            </div>
+        </div>
+    );
+};
+
+// --- Cart Page ---
+const CartPage = ({
+    cart,
+    setCart,
+    setPage,
+    foodItems,
+    setFoodItems
+}: {
+    cart: { item: string; quantity: number }[];
+    setCart: (cart: { item: string; quantity: number }[]) => void;
+    setPage: (page: string) => void;
+    foodItems: FoodItem[];
+    setFoodItems: (foodItems: FoodItem[]) => void;
+}) => {
+    const [stockError, setStockError] = useState<string | null>(null);
+
+    const calculateTotal = () => {
+        let total = 0;
+        cart.forEach(cartItem => {
+            const foodItem = foodItems.find(item => item.name === cartItem.item);
+            if (foodItem) {
+                total += foodItem.price * cartItem.quantity;
+            }
+        });
+        return total;
+    };
+
+    const handleProceedToPayment = () => {
+        // Check stock before proceeding
+        for (const cartItem of cart) {
+            const foodItem = foodItems.find(item => item.name === cartItem.item);
+            if (foodItem && cartItem.quantity > foodItem.stock) {
+                setStockError(`Insufficient stock for ${cartItem.item}. Please update your cart.`);
+                return;
+            }
+        }
+
+        // Update stock and proceed to payment
+        const updatedFoodItems = [...foodItems];
+        const updatedCart = [...cart]; // Create a copy to avoid modifying state directly
+        for (const cartItem of updatedCart) { // Iterate over the copy
+            const foodItemIndex = updatedFoodItems.findIndex(item => item.name === cartItem.item);
+            if (foodItemIndex > -1) {
+                updatedFoodItems[foodItemIndex].stock -= cartItem.quantity;
+            }
+        }
+        setFoodItems(updatedFoodItems);
+        setPage('payment');
+        setStockError(null); // Clear any previous error
+    };
+
+    const handleRemoveItem = (itemName: string) => {
+        const itemToRemove = cart.find((item) => item.item === itemName);
+        if (itemToRemove) {
+            // Return stock to available
+            setFoodItems((prevFoodItems) =>
+                prevFoodItems.map((foodItem) => {
+                    if (foodItem.name === itemName) {
+                        return {
+                            ...foodItem,
+                            stock: foodItem.stock + itemToRemove.quantity,
+                        };
+                    }
+                    return foodItem;
+                })
+            );
+
+            // Remove item from cart
+            setCart((prevCart) => prevCart.filter((item) => item.item !== itemName));
+        }
+    };
+
+    if (cart.length === 0) {
+        return (
+            <div className="container mx-auto p-4 text-center">
+                <p className="text-gray-500">Your cart is empty.</p>
+                <Button
+                    onClick={() => setPage('order')}
+                    className="mt-4 bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                    <ShoppingCart className="mr-2" />
+                    Order Food
+                </Button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="container mx-auto p-4">
+            <h1 className="text-2xl font-bold mb-4 text-center">Your Cart</h1>
+            {stockError && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                    <strong className="font-bold">Error: </strong>
+                    <span className="block sm:inline">{stockError}</span>
+                    <AlertTriangle className="absolute top-3 left-4 h-6 w-6 text-red-500" />
+                </div>
+            )}
+            <div className="space-y-4">
+                {cart.map((cartItem) => {
+                    const foodItem = foodItems.find(item => item.name === cartItem.item);
+                    const itemPrice = foodItem ? foodItem.price : 0;
+                    return (
+                        <div key={cartItem.item} className="flex items-center justify-between border-b pb-4">
+                            <div>
+                                <h3 className="text-lg font-semibold">{cartItem.item}</h3>
+                                <p className="text-gray-500">Quantity: {cartItem.quantity}</p>
+                                <p className="text-gray-700">
+                                    Price: {formatCurrency(itemPrice * cartItem.quantity)}
+                                </p>
+                            </div>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleRemoveItem(cartItem.item)}
+                                className="bg-red-500 hover:bg-red-600 text-white"
+                            >
+                                Remove
+                            </Button>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="mt-6 flex justify-between items-center">
+                <h2 className="text-xl font-bold">Total: {formatCurrency(calculateTotal())}</h2>
+                <Button
+                    onClick={handleProceedToPayment}
+                    className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                    Proceed to Payment
+                </Button>
+            </div>
+            <div className="mt-4">
+                <Button
+                    onClick={() => setPage('order')}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                    <ShoppingCart className="mr-2" />
+                    Back to Order
+                </Button>
+            </div>
+        </div>
+    );
+};
+
+// --- Payment Page ---
+const PaymentPage = ({
+    cart,
+    setCart,
+    setPage,
+    setOrders,
+    orders
+}: {
+    cart: { item: string; quantity: number }[];
+    setCart: (cart: { item: string; quantity: number }[]) => void;
+    setPage: (page: string) => void;
+    setOrders: (orders: Order[]) => void;
+    orders: Order[];
+}) => {
+    const [orderNumber, setOrderNumber] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const total = cart.reduce((acc, item) => {
+        // Mock price, in real app, fetch from food item
+        const price = item.item === 'Fishball' ? 10 : item.item === 'Siu Mai' ? 8 : 12;
+        return acc + price * item.quantity;
+    }, 0);
+
+    const handleConfirmPayment = () => {
+        setLoading(true);
+        // Simulate payment processing
+        setTimeout(() => {
+            // Generate a random order number
+            const newOrderNumber = `ORD-${Math.random().toString(36).substring(7).toUpperCase()}`;
+
+            // Create order object
+            const newOrder: Order = {
+                orderNumber: newOrderNumber,
+                items: cart,
+                total: total,
+                orderTime: new Date().toLocaleString(),
+            };
+
+            // Add to orders
+            setOrders([...orders, newOrder]);
+            setOrderNumber(newOrderNumber);
+            setCart([]); // Clear the cart after successful payment
+            setLoading(false);
+        }, 2000); // Simulate 2 seconds processing time
+    };
+
+    return (
+        <div className="container mx-auto p-4">
+            <h1 className="text-2xl font-bold mb-4 text-center">Payment</h1>
+            <Card className="mb-6">
+                <CardHeader>
+                    <h2 className="text-lg font-semibold">Order Summary</h2>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        {cart.map((item) => {
+                            // Mock price, in real app, fetch from food item
+                            const price = item.item === 'Fishball' ? 10 : item.item === 'Siu Mai' ? 8 : 12;
+                            return (
+                                <div key={item.item} className="flex justify-between">
+                                    <p>{item.item} x {item.quantity}</p>
+                                    <p>{formatCurrency(price * item.quantity)}</p>
+                                </div>
+                            );
+                        })}
+                        <div className="font-bold text-lg border-t border-gray-200 pt-2">
+                            Total: {formatCurrency(total)}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <div className="text-center">
+                {orderNumber ? (
+                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+                        <strong className="font-bold">Success! </strong>
+                        <span className="block sm:inline">Your order number is: {orderNumber}</span>
+                        <CheckCircle className="absolute top-3 left-4 h-6 w-6 text-green-500" />
+                    </div>
+                ) : (
+                    <Button
+                        onClick={handleConfirmPayment}
+                        className="bg-green-500 hover:bg-green-600 text-white w-full"
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Processing...
+                            </>
+                        ) : (
+                            'Confirm Payment'
+                        )}
+                    </Button>
+                )}
+                {!orderNumber && (
+                    <Button
+                        onClick={() => setPage('cart')}
+                        className="mt-4 bg-blue-500 hover:bg-blue-600 text-white"
+                    >
+                        <ShoppingCart className="mr-2" />
+                        Back to Cart
+                    </Button>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// --- Checking Queue Time Page ---
+const CheckingQueueTimePage = () => {
+    const [queueTime, setQueueTime] = useState<number>(5); // Initial queue time
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setLoading(false);
+        }, 500); // Simulate initial load
+
+        return () => clearTimeout(timer);
+    }, []);
+
+    useEffect(() => {
+        // Simulate queue time changes every 10 seconds.
+        const intervalId = setInterval(() => {
+            // In a real application, you would fetch this data from a server.
+            // For this example, we'll just add a random number between 1 and 5 to the queue time.
+            setQueueTime(prevTime => prevTime + Math.floor(Math.random() * 5) + 1);
+        }, 10000);
+
+        return () => clearInterval(intervalId); // Cleanup on unmount
+    }, []);
+
+    return (
+        <div className="container mx-auto p-4 text-center">
+            <h1 className="text-2xl font-bold mb-4">Checking Queue Time</h1>
+            {loading ? (
+                <div className="flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+                    <p className="ml-2 text-gray-500">Loading queue time...</p>
+                </div>
+            ) : (
+                <Card>
+                    <CardHeader>
+                        <h2 className="text-lg font-semibold">Current Queue Time</h2>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-center gap-2">
+                            <Clock className="h-6 w-6 text-blue-500" />
+                            <p className="text-xl font-bold">{queueTime} minutes</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+        </div>
+    );
+};
+
+// --- Previous Order Page ---
+const PreviousOrderPage = ({
+    orders
+}: {
+    orders: Order[]
+}) => {
+    if (!orders || orders.length === 0) {
+        return (
+            <div className="container mx-auto p-4 text-center">
+                <p className="text-gray-500">No previous orders found.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="container mx-auto p-4">
+            <h1 className="text-2xl font-bold mb-4 text-center">Previous Orders</h1>
+            <div className="space-y-4">
+                {orders.map((order, index) => (
+                    <Card key={index} className="border">
+                        <CardHeader>
+                            <h2 className="text-lg font-semibold">Order Number: {order.orderNumber}</h2>
+                            <p className="text-gray-500">Order Time: {order.orderTime}</p>
+                            <p className="text-gray-700 font-medium">
+                                Total: {formatCurrency(order.total)}
+                            </p>
+                        </CardHeader>
+                        <CardContent>
+                            <h3 className="text-md font-semibold mb-2">Order Items:</h3>
+                            <ul className="list-disc list-inside">
+                                {order.items.map((item, itemIndex) => {
+                                    const price = item.item === 'Fishball' ? 10 : item.item === 'Siu Mai' ? 8 : 12;
+                                    return (
+                                        <li key={itemIndex} className="flex justify-between">
+                                            <span>{item.item} x {item.quantity}</span>
+                                            <span>{formatCurrency(price * item.quantity)}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// --- Home Page ---
+const HomePage = ({ setPage }: { setPage: (page: string) => void }) => {
+    return (
+        <div className="container mx-auto p-4 flex flex-col items-center justify-center h-full">
+            <h1 className="text-3xl font-bold mb-8 text-center">Welcome to Our Tuck Shop</h1>
+            <div className="space-y-4 w-full max-w-sm">
+                <Button
+                    onClick={() => setPage('order')}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 text-lg"
+                >
+                    <ShoppingCart className="mr-2" />
+                    Order Food
+                </Button>
+                <Button
+                    onClick={() => setPage('queue')}
+                    className="w-full bg-green-500 hover:bg-green-600 text-white py-3 text-lg"
+                >
+                    <Clock className="mr-2" />
+                    Checking Queue Time
+                </Button>
+            </div>
+        </div>
+    );
+};
+
+// --- Main App Component ---
+const TuckShopApp = () => {
+    const [page, setPage] = useState<string>('home'); // 'home', 'order', 'cart', 'payment', 'queue'
+    const [cart, setCart] = useState<{ item: string; quantity: number }[]>([]);
+    const [foodItems, setFoodItems] = useState<FoodItem[]>(initialFoodItems);
+    const [orders, setOrders] = useState<Order[]>([]);
+
+    const renderPage = () => {
+        switch (page) {
+            case 'home':
+                return <HomePage setPage={setPage} />;
+            case 'order':
+                return (
+                    <OrderFoodPage
+                        foodItems={foodItems}
+                        cart={cart}
+                        setCart={setCart}
+                        setPage={setPage}
+                        setFoodItems={setFoodItems}
+                    />
+                );
+            case 'cart':
+                return (
+                    <CartPage
+                        cart={cart}
+                        setCart={setCart}
+                        setPage={setPage}
+                        foodItems={foodItems}
+                        setFoodItems={setFoodItems}
+                    />
+                );
+            case 'payment':
+                return <PaymentPage
+                    cart={cart}
+                    setCart={setCart}
+                    setPage={setPage}
+                    setOrders={setOrders}
+                    orders={orders}
+                />;
+            case 'queue':
+                return <CheckingQueueTimePage />;
+            case 'previousOrder':
+                return <PreviousOrderPage orders={orders} />;
+            default:
+                return <HomePage setPage={setPage} />;
+        }
+    };
+
+    return (
+        <div className="bg-gray-100 min-h-screen">
+            {/* Top bar for Home and Previous Orders */}
+            <div className="bg-white shadow-md p-4 flex items-center">
+                <Button
+                    variant="ghost"
+                    onClick={() => setPage('home')}
+                    className="mr-2"
+                >
+                    <Home className="mr-2" />
+                    Home
+                </Button>
+                <Button
+                    variant="ghost"
+                    onClick={() => setPage('previousOrder')}
+                >
+                    <ListChecks className="mr-2" />
+                    Previous Orders
+                </Button>
+            </div>
+            {renderPage()}
+        </div>
+    );
+};
+
+export default TuckShopApp;
+
